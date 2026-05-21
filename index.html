@@ -325,6 +325,8 @@ const SK_S='dentearn:settings';
 const SK_E='dentearn:entries';
 const SK_P='dentearn:presets';
 const SK_B='dentearn:bands';
+const SK_PRAC='dentearn:practices';
+const SK_SESSION='dentearn:session';
 
 const _mem={};
 const store={
@@ -338,9 +340,9 @@ const TX=[
   {id:'b2a',label:'Band 2a',udas:3,flat:0,sub:'Standard Band 2 · 3 UDA',bg:'#E1F5EE',tc:'#085041',bc:'#0F6E56'},
   {id:'b2b',label:'Band 2b',udas:5,flat:0,sub:'3+ fillings/ext, non-molar endo, fissure 3+ · 5 UDA',bg:'#E1F5EE',tc:'#085041',bc:'#0F6E56'},
   {id:'b2c',label:'Band 2c',udas:7,flat:0,sub:'Molar endodontics · 7 UDA',bg:'#E1F5EE',tc:'#085041',bc:'#0F6E56'},
-  {id:'dmod',label:'Denture mod',udas:2,flat:0,sub:'+2 UDA add-on to Band 2',bg:'#E6F1FB',tc:'#0C447C',bc:'#185FA5'},
+  {id:'dmod',label:'Denture mod',udas:3,flat:0,sub:'+3 UDA add-on to Band 2a CoT',bg:'#E6F1FB',tc:'#0C447C',bc:'#185FA5'},
   {id:'b3',label:'Band 3',udas:12,flat:0,sub:'12 UDAs',bg:'#E1F5EE',tc:'#085041',bc:'#0F6E56'},
-  {id:'uc',label:'Unscheduled',udas:0,flat:75,sub:'£75 flat fee',bg:'#FAEEDA',tc:'#633806',bc:'#854F0B'},
+  {id:'uc',label:'Unscheduled',udas:0,flat:75,sub:'£75 to practice · your % paid as UDA equivalent',bg:'#FAEEDA',tc:'#633806',bc:'#854F0B'},
   {id:'cp1',label:'Complex 1',udas:0,flat:284,sub:'Severe caries · £284 (June 2026)',bg:'#EEEDFE',tc:'#3C3489',bc:'#534AB7'},
   {id:'cp2',label:'Complex 2',udas:0,flat:709,sub:'Caries + perio · £709 (June 2026)',bg:'#EEEDFE',tc:'#3C3489',bc:'#534AB7'},
   {id:'cp3',label:'Complex 3',udas:0,flat:248,sub:'Aggressive perio · £248 (June 2026)',bg:'#EEEDFE',tc:'#3C3489',bc:'#534AB7'},
@@ -474,25 +476,112 @@ function EditBands({bandValues,txList,onSave,onReset,onCancel}){
   );
 }
 
-function Setup({onSave,initial,onCancel,onClearData}){
+
+function StartDay({practices,onStart,onSkip}){
+  const [session,setSession]=useState('');
+  const [practice,setPractice]=useState(practices[0]||'');
+  const ok=session!=='';
+  const opts=[
+    {val:'am',label:'Morning',icon:'🌅'},
+    {val:'pm',label:'Afternoon',icon:'🌇'},
+    {val:'full',label:'Full day',icon:'☀️'},
+  ];
+  return h('div',{style:{minHeight:'100vh',background:'#f8fafc',display:'flex',alignItems:'center',justifyContent:'center',padding:24,fontFamily:'system-ui,-apple-system,sans-serif'}},
+    h('div',{style:{width:'100%',maxWidth:380,background:'#fff',borderRadius:16,padding:28,boxShadow:'0 1px 8px rgba(0,0,0,0.08)'}},
+      h('div',{style:{marginBottom:24}},
+        h('div',{style:{fontSize:20,fontWeight:700,color:'#0f172a',marginBottom:4}},
+          '👋 Good '+( new Date().getHours()<12?'morning':new Date().getHours()<17?'afternoon':'evening')+'!'),
+        h('p',{style:{fontSize:14,color:'#64748b',lineHeight:1.6}},'Set up your session for today before you start logging.')
+      ),
+      h('div',{style:{marginBottom:16}},
+        h('label',{style:{display:'block',fontSize:12,color:'#64748b',marginBottom:6}},'Session type'),
+        h('div',{style:{display:'flex',gap:6}},
+          ...opts.map(o=>h('button',{key:o.val,onClick:()=>setSession(o.val),
+            style:{flex:1,padding:'10px 4px',borderRadius:8,border:'1px solid',
+              borderColor:session===o.val?'#0f172a':'#e2e8f0',
+              background:session===o.val?'#0f172a':'#fff',
+              color:session===o.val?'#fff':'#64748b',
+              fontWeight:session===o.val?700:400,fontSize:12,cursor:'pointer'}},
+            h('div',{style:{fontSize:16,marginBottom:3}},o.icon),
+            h('div',null,o.label)
+          ))
+        )
+      ),
+      h('div',{style:{marginBottom:20}},
+        h('label',{style:{display:'block',fontSize:12,color:'#64748b',marginBottom:6}},'Practice'),
+        practices.length>0
+          ?h('select',{value:practice,onChange:e=>setPractice(e.target.value),
+              style:{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid #e2e8f0',fontSize:15,background:'#fff',fontFamily:'inherit'}},
+              ...practices.map(p=>h('option',{key:p,value:p},p)),
+              h('option',{value:''},'Other / not listed')
+            )
+          :h('div',{style:{fontSize:13,color:'#94a3b8',padding:'10px 12px',background:'#f8fafc',borderRadius:8,border:'1px solid #e2e8f0'}},
+              'No practices saved — add them in Settings ⚙️')
+      ),
+      h('button',{onClick:()=>ok&&onStart({session,practice,date:new Date().toISOString().split('T')[0]}),
+        style:{width:'100%',padding:13,background:ok?'#0f172a':'#94a3b8',color:'#fff',borderRadius:10,border:'none',fontWeight:700,fontSize:15,marginBottom:10}},
+        'Start session'),
+      h('button',{onClick:onSkip,
+        style:{width:'100%',padding:10,background:'none',border:'none',color:'#94a3b8',fontSize:13,cursor:'pointer'}},
+        'Skip for now')
+    )
+  );
+}
+
+function Setup({onSave,initial,onCancel,onClearData,practices,onAddPractice,onDeletePractice}){
   const init=initial
     ?{name:initial.name,ut:String(initial.udaTarget),ur:String(initial.udaRate),ap:String(initial.assocPct),lp:String(initial.labPct??50),nhs:initial.nhs!==false}
-    :{name:'',ut:'5000',ur:'13',ap:'45',lp:'50',nhs:true};
+    :{name:'',ut:'5000',ur:'13',ap:'45',lp:'50',nhs:null};
   const [f,sf]=useState(init);
   const [confirmClear,setConfirmClear]=useState(false);
   const u=k=>e=>sf(p=>({...p,[k]:e.target.value}));
-  const ok=f.name.trim()&&(!f.nhs||(+f.ut>0&&+f.ur>0))&&+f.ap>0;
+  const ok=f.name.trim()&&f.nhs!==null&&(!f.nhs||(+f.ut>0&&+f.ur>0))&&+f.ap>0;
+  const isNew=!initial;
+
+  // Step 1 — NHS choice screen for brand new users only
+  if(isNew&&f.nhs===null){
+    return h('div',{style:{minHeight:'100vh',background:'#f8fafc',display:'flex',alignItems:'center',justifyContent:'center',padding:24}},
+      h('div',{style:{width:'100%',maxWidth:380,background:'#fff',borderRadius:16,padding:28,boxShadow:'0 1px 8px rgba(0,0,0,0.08)'}},
+        h('div',{style:{textAlign:'center',marginBottom:28}},
+          h('div',{style:{fontSize:22,fontWeight:700,color:'#0f172a',marginBottom:8}},'Welcome to DentEarn'),
+          h('p',{style:{fontSize:14,color:'#64748b',lineHeight:1.6}},'Tell us about the type of work you do so we can set up the right tools for you.')
+        ),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:12}},
+          h('button',{onClick:()=>sf(p=>({...p,nhs:true})),
+            style:{width:'100%',padding:'18px 16px',borderRadius:12,border:'2px solid #0F6E56',background:'#E1F5EE',cursor:'pointer',textAlign:'left'}},
+            h('div',{style:{fontWeight:700,fontSize:15,color:'#085041',marginBottom:4}},'NHS + Private'),
+            h('div',{style:{fontSize:12,color:'#085041',opacity:.8}},'I do NHS work and may also do private treatments')
+          ),
+          h('button',{onClick:()=>sf(p=>({...p,nhs:false})),
+            style:{width:'100%',padding:'18px 16px',borderRadius:12,border:'2px solid #185FA5',background:'#E6F1FB',cursor:'pointer',textAlign:'left'}},
+            h('div',{style:{fontWeight:700,fontSize:15,color:'#0C447C',marginBottom:4}},'Private only'),
+            h('div',{style:{fontSize:12,color:'#0C447C',opacity:.8}},'I only do private work, no NHS')
+          )
+        ),
+        h('p',{style:{marginTop:20,textAlign:'center',fontSize:11,color:'#94a3b8'}},
+          'You can change this at any time in Settings ⚙️')
+      )
+    );
+  }
+
+  // Step 2 — Details form
   return h('div',{style:{minHeight:'100vh',background:'#f8fafc',display:'flex',alignItems:'center',justifyContent:'center',padding:24}},
     h('div',{style:{width:'100%',maxWidth:380,background:'#fff',borderRadius:16,padding:28,boxShadow:'0 1px 8px rgba(0,0,0,0.08)'}},
-      h('div',{style:{marginBottom:24}},
+      h('div',{style:{marginBottom:20}},
+        isNew&&h('button',{onClick:()=>sf(p=>({...p,nhs:null})),
+          style:{background:'none',border:'none',fontSize:13,color:'#64748b',cursor:'pointer',padding:'0 0 8px',display:'block'}},'← Back'),
         h('div',{style:{fontSize:22,fontWeight:700,color:'#0f172a',marginBottom:4}},'DentEarn'),
-        h('p',{style:{fontSize:14,color:'#64748b'}},initial?'Update your settings':'Your NHS + private income tracker')
+        h('p',{style:{fontSize:14,color:'#64748b'}},
+          initial?'Update your settings':f.nhs?'NHS + private setup':'Private only setup'),
+        isNew&&h('span',{style:{display:'inline-block',marginTop:6,padding:'3px 10px',borderRadius:10,
+          background:f.nhs?'#E1F5EE':'#E6F1FB',fontSize:11,fontWeight:600,
+          color:f.nhs?'#085041':'#0C447C'}},f.nhs?'NHS + Private':'Private only')
       ),
       h(Field,{label:'Your name',placeholder:'Dr Smith',value:f.name,onChange:u('name')}),
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',background:'#f8fafc',borderRadius:8,border:'1px solid #e2e8f0',marginBottom:14}},
+      initial&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',background:'#f8fafc',borderRadius:8,border:'1px solid #e2e8f0',marginBottom:14}},
         h('div',null,
           h('div',{style:{fontSize:13,fontWeight:600,color:'#0f172a'}},'NHS work'),
-          h('div',{style:{fontSize:11,color:'#94a3b8'}},'Enable UDA tracking')
+          h('div',{style:{fontSize:11,color:'#94a3b8'}},'Toggle to enable or disable NHS tracking')
         ),
         h('button',{onClick:()=>sf(p=>({...p,nhs:!p.nhs})),
           style:{width:44,height:24,borderRadius:12,border:'none',background:f.nhs?'#0F6E56':'#cbd5e1',position:'relative',transition:'background .2s',flexShrink:0}},
@@ -509,7 +598,27 @@ function Setup({onSave,initial,onCancel,onClearData}){
           style:{flex:2,padding:11,borderRadius:8,border:'none',background:ok?'#0f172a':'#94a3b8',color:'#fff',fontWeight:700,fontSize:14}},
           initial?'Save changes':'Get started')
       ),
-      initial&&onClearData&&h('div',{style:{marginTop:24,paddingTop:20,borderTop:'1px solid #f1f5f9'}},
+      initial&&h('div',{style:{marginTop:24,paddingTop:20,borderTop:'1px solid #f1f5f9'}},
+        h('div',{style:{fontSize:11,color:'#94a3b8',marginBottom:10,fontWeight:500,letterSpacing:'0.06em'}},'MY PRACTICES'),
+        h('div',{style:{marginBottom:8}},
+          ...(practices||[]).map((p,i)=>h('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f8fafc',borderRadius:7,padding:'8px 12px',marginBottom:6,border:'1px solid #e2e8f0'}},
+            h('span',{style:{fontSize:13,color:'#0f172a'}},p),
+            h('button',{onClick:()=>onDeletePractice(i),style:{background:'none',border:'none',color:'#fca5a5',fontSize:18,cursor:'pointer',lineHeight:1,padding:'0 2px'}},'×')
+          ))
+        ),
+        h('div',{style:{display:'flex',gap:8}},
+          h('input',{
+            id:'newprac',placeholder:'Add practice name',
+            style:{flex:1,padding:'8px 10px',borderRadius:7,border:'1px solid #e2e8f0',fontSize:13,fontFamily:'inherit'},
+            onKeyDown:e=>{if(e.key==='Enter'){onAddPractice(e.target.value);e.target.value='';}}
+          }),
+          h('button',{
+            onClick:()=>{const el=document.getElementById('newprac');if(el&&el.value.trim()){onAddPractice(el.value.trim());el.value='';}},
+            style:{padding:'8px 14px',borderRadius:7,border:'none',background:'#0f172a',color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}},
+            'Add')
+        )
+      ),
+      initial&&onClearData&&h('div',{style:{marginTop:16,paddingTop:16,borderTop:'1px solid #f1f5f9'}},
         h('div',{style:{fontSize:11,color:'#94a3b8',marginBottom:10,fontWeight:500,letterSpacing:'0.06em'}},'DANGER ZONE'),
         !confirmClear
           ?h('button',{onClick:()=>setConfirmClear(true),
@@ -526,10 +635,11 @@ function Setup({onSave,initial,onCancel,onClearData}){
     )
   );
 }
-
 function Dashboard({stats,settings}){
-  const {udas,nhsE,privE,labF,miscF,net,pct,projected,labPct}=stats;
+  const {udas,nhsE,privE,labF,miscF,net,pct,projected,labPct,sessions}=stats;
   const projOk=projected>=settings.udaTarget;
+  const clawbackRisk=udas>0&&projected<settings.udaTarget*0.96;
+  const clawback70=udas>0&&projected<settings.udaTarget*0.70;
   const barCol=pct<50?'#ef4444':pct<80?'#f59e0b':'#22c55e';
   const nhsOn=settings.nhs!==false;
   const cards=nhsOn
@@ -550,6 +660,20 @@ function Dashboard({stats,settings}){
           udas===0?'Start logging to see projection':(projOk?'↑ ':'⚠ ')+fU(projected)+' projected year-end')
       )
     ),
+    nhsOn&&clawback70&&h('div',{style:{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:10,padding:'10px 14px',marginBottom:12,display:'flex',gap:10,alignItems:'flex-start'}},
+      h('span',{style:{fontSize:18,flexShrink:0}},'🚨'),
+      h('div',null,
+        h('div',{style:{fontWeight:700,fontSize:13,color:'#dc2626',marginBottom:2}},'Clawback risk'),
+        h('div',{style:{fontSize:12,color:'#dc2626',opacity:.85}},'Projected below 70% of target. Your practice may recover overpaid UDA fees. Speak to your principal.')
+      )
+    ),
+    nhsOn&&!clawback70&&clawbackRisk&&h('div',{style:{background:'#fefce8',border:'1px solid #fde047',borderRadius:10,padding:'10px 14px',marginBottom:12,display:'flex',gap:10,alignItems:'flex-start'}},
+      h('span',{style:{fontSize:18,flexShrink:0}},'⚠️'),
+      h('div',null,
+        h('div',{style:{fontWeight:700,fontSize:13,color:'#854d0e',marginBottom:2}},'Below target pace'),
+        h('div',{style:{fontSize:12,color:'#854d0e',opacity:.85}},'Projected below 96% of target. Consider booking more complex treatments to catch up.')
+      )
+    ),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}},
       ...cards.map(c=>h('div',{key:c.label,style:{background:'#fff',border:'1px solid #f1f5f9',borderRadius:12,padding:'12px 12px 10px'}},
         h('div',{style:{width:28,height:28,borderRadius:7,background:c.ibg,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:8,fontSize:14}},c.icon),
@@ -557,12 +681,25 @@ function Dashboard({stats,settings}){
         h('div',{style:{fontSize:11,color:'#94a3b8'}},c.label)
       ))
     ),
-    h('div',{style:{background:'#0f172a',borderRadius:12,padding:'16px 18px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+    h('div',{style:{background:'#0f172a',borderRadius:12,padding:'16px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
       h('div',null,
         h('div',{style:{fontSize:11,color:'#94a3b8',marginBottom:3}},'NET INCOME'),
-        h('div',{style:{fontSize:11,color:'#475569'}},fmt(nhsE+privE)+' gross  '+fmt(labF+miscF)+' costs')
+        h('div',{style:{fontSize:11,color:'#475569'}},(nhsOn?'NHS '+fmt(nhsE)+'  ':'')+'Private '+fmt(privE))
       ),
       h('div',{style:{fontSize:28,fontWeight:700,color:'#fff'}},fmt(net))
+    ),
+    sessions>0&&h('div',{style:{background:'#fff',border:'1px solid #f1f5f9',borderRadius:12,padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:10}},
+        h('div',{style:{fontSize:20}},'📅'),
+        h('div',null,
+          h('div',{style:{fontSize:18,fontWeight:700}},String(sessions)),
+          h('div',{style:{fontSize:11,color:'#94a3b8'}},'Sessions (half days)')
+        )
+      ),
+      h('div',{style:{textAlign:'right'}},
+        h('div',{style:{fontSize:15,fontWeight:700}},fmt(net/sessions)),
+        h('div',{style:{fontSize:10,color:'#94a3b8'}},'avg net per session')
+      )
     )
   );
 }
@@ -596,7 +733,30 @@ function ManagePresets({presets,onSave,onDelete,onBack}){
   );
 }
 
-function LogScreen({logTab,setLogTab,nhsMode,setNhsMode,step,setStep,selTx,setSelTx,form,setForm,settings,presets,txList,onLog,onSavePreset,onDeletePreset}){
+
+function SessionSelector({value,onChange}){
+  const opts=[
+    {val:'am',label:'Morning',icon:'🌅'},
+    {val:'pm',label:'Afternoon',icon:'🌇'},
+    {val:'full',label:'Full day',icon:'☀️'},
+  ];
+  return h('div',{style:{marginBottom:14}},
+    h('label',{style:{display:'block',fontSize:12,color:'#64748b',marginBottom:6}},'Session type'),
+    h('div',{style:{display:'flex',gap:6}},
+      ...opts.map(o=>h('button',{key:o.val,onClick:()=>onChange(o.val),
+        style:{flex:1,padding:'8px 4px',borderRadius:8,border:'1px solid',
+          borderColor:value===o.val?'#0f172a':'#e2e8f0',
+          background:value===o.val?'#0f172a':'#fff',
+          color:value===o.val?'#fff':'#64748b',
+          fontWeight:value===o.val?700:400,fontSize:12,cursor:'pointer'}},
+        h('div',{style:{fontSize:14,marginBottom:2}},o.icon),
+        h('div',null,o.label)
+      ))
+    )
+  );
+}
+
+function LogScreen({logTab,setLogTab,step,setStep,selTx,setSelTx,form,setForm,settings,presets,txList,onLog,onSavePreset,onDeletePreset}){
   const TXL=txList||TX;
   const upd=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
   const back=s=>h('button',{onClick:s,style:{background:'none',border:'none',cursor:'pointer',color:'#64748b',padding:'0 0 16px',fontSize:13}},'Back');
@@ -614,41 +774,20 @@ function LogScreen({logTab,setLogTab,nhsMode,setNhsMode,step,setStep,selTx,setSe
       h('div',{style:{background:selTx.bg,border:'1px solid '+selTx.bc,borderRadius:10,padding:'12px 14px',marginBottom:14}},
         h('div',{style:{fontWeight:700,color:selTx.tc,fontSize:15,marginBottom:2}},selTx.label+(qty>1?' x'+qty:'')),
         h('div',{style:{fontSize:12,color:selTx.tc,opacity:.8}},
-          selTx.udas>0?fU(udaTotal)+' UDA  '+fmt(earnTotal)+' earned':'Your cut: '+fmt(earnTotal))
+          selTx.udas>0?fU(udaTotal)+' UDA · Your share: '+fmt(earnTotal):'Your share: '+fmt(earnTotal))
       ),
       isDmod&&h('div',{style:{background:'#E6F1FB',borderRadius:8,padding:'8px 12px',marginBottom:14,fontSize:12,color:'#0C447C',lineHeight:1.5}},
-        'Add-on to a Band 2 CoT or complex care package. Log your Band 2 separately, then log this to capture the extra 2 UDAs for the denture modification.'
+        'Add-on to a Band 2 CoT or complex care package. Log your Band 2 separately, then log this to capture the extra 3 UDAs for the denture modification.'
       ),
       !isDmod&&h(Stepper,{val:qty,onChange:v=>setForm(p=>({...p,qty:v}))}),
       h(Field,{label:'Lab fee — full amount (optional)',type:'number',placeholder:'0.00',value:form.lab,onChange:upd('lab'),
         hint:+form.lab>0?'Your '+(settings.labPct||100)+'% share: '+fmt(+form.lab*(settings.labPct||100)/100):(qty>1&&!isDmod?'Enter combined lab fee for all '+qty:null)}),
       h(Field,{label:'Misc cost (optional)',type:'number',placeholder:'0.00',value:form.misc,onChange:upd('misc')}),
+      h(Field,{label:'Note (optional)',placeholder:'e.g. locum cover, complex case...',value:form.note||'',onChange:e=>setForm(p=>({...p,note:e.target.value}))}),
       h('button',{
-        onClick:()=>onLog({id:Date.now(),date:todayStr(),type:'nhs',label:selTx.label+(qty>1?' x'+qty:''),udas:udaTotal,nhsFlat:selTx.flat*qty,nhsE:earnTotal,labF:+form.lab||0,miscF:+form.misc||0,privE:0}),
+        onClick:()=>onLog({id:Date.now(),date:todayStr(),type:'nhs',label:selTx.label+(qty>1?' x'+qty:''),udas:udaTotal,nhsFlat:selTx.flat*qty,nhsE:earnTotal,labF:+form.lab||0,miscF:+form.misc||0,privE:0,note:form.note||''}),
         style:{width:'100%',padding:12,background:'#0f172a',color:'#fff',borderRadius:10,border:'none',fontWeight:700,fontSize:15,marginTop:4}
       },'Log treatment'+(qty>1&&!isDmod?' (x'+qty+')':''))
-    );
-  }
-
-  if(step==='dayTotal'){
-    const udaCount=+form.udaCount||0;
-    const earn=udaCount?fmt(udaCount*settings.udaRate):null;
-    const ok=udaCount>0;
-    return h('div',{style:{padding:'0 16px'}},
-      back(()=>setStep('pick')),
-      h('div',{style:{background:'#E1F5EE',border:'1px solid #0F6E56',borderRadius:10,padding:'12px 14px',marginBottom:18}},
-        h('div',{style:{fontWeight:700,color:'#085041',fontSize:15,marginBottom:2}},"Day UDA Total"),
-        h('div',{style:{fontSize:12,color:'#085041',opacity:.8}},'Enter total UDAs for today')
-      ),
-      h(Field,{label:'Total UDAs today',type:'number',placeholder:'e.g. 14',value:form.udaCount,onChange:upd('udaCount')}),
-      earn&&h('div',{style:{background:'#E1F5EE',borderRadius:8,padding:'8px 12px',marginBottom:14,fontSize:13,color:'#085041'}},
-        'NHS earnings: ',h('strong',null,earn)),
-      h(Field,{label:'Lab fees (optional)',type:'number',placeholder:'0.00',value:form.lab,onChange:upd('lab')}),
-      h(Field,{label:'Misc costs (optional)',type:'number',placeholder:'0.00',value:form.misc,onChange:upd('misc')}),
-      h('button',{
-        onClick:()=>ok&&onLog({id:Date.now(),date:todayStr(),type:'nhs',label:'Day UDAs ('+fU(udaCount)+')',udas:udaCount,nhsFlat:0,nhsE:udaCount*settings.udaRate,labF:+form.lab||0,miscF:+form.misc||0,privE:0}),
-        style:{width:'100%',padding:12,background:ok?'#0f172a':'#94a3b8',color:'#fff',borderRadius:10,border:'none',fontWeight:700,fontSize:15,marginTop:4}
-      },'Log day total')
     );
   }
 
@@ -665,24 +804,13 @@ function LogScreen({logTab,setLogTab,nhsMode,setNhsMode,step,setStep,selTx,setSe
     ),
     logTab==='nhs'
       ?h('div',null,
-          h('div',{style:{display:'flex',background:'#f1f5f9',borderRadius:8,padding:3,marginBottom:14,gap:3}},
-            ['treatment','day'].map(m=>h('button',{key:m,onClick:()=>setNhsMode(m),
-              style:{flex:1,padding:'7px 0',borderRadius:6,border:'none',background:nhsMode===m?'#fff':'transparent',fontWeight:nhsMode===m?700:400,color:nhsMode===m?'#0f172a':'#94a3b8',fontSize:13,boxShadow:nhsMode===m?'0 1px 3px rgba(0,0,0,0.08)':'none'}},
-              m==='treatment'?'By treatment':'Day total'))
-          ),
-          nhsMode==='treatment'
-            ?h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
-                ...TXL.map(t=>h('button',{key:t.id,onClick:()=>{setSelTx(t);setForm(p=>({...p,qty:1}));setStep('nhsForm');},
-                  style:{background:t.bg,border:'1px solid '+t.bc,borderRadius:10,padding:'12px 10px',cursor:'pointer',textAlign:'left',minHeight:64}},
-                  h('div',{style:{fontWeight:700,color:t.tc,fontSize:14,marginBottom:4}},t.label),
-                  h('div',{style:{fontSize:10,color:t.tc,opacity:.7,lineHeight:1.4}},t.sub)
-                ))
-              )
-            :h('div',{style:{textAlign:'center',paddingTop:30}},
-                h('div',{style:{fontSize:40,marginBottom:12}},'🗓️'),
-                h('p',{style:{color:'#64748b',marginBottom:24,fontSize:14}},'Enter total UDAs for the day'),
-                h('button',{onClick:()=>setStep('dayTotal'),style:{padding:'12px 28px',background:'#0f172a',color:'#fff',borderRadius:10,border:'none',fontWeight:700,fontSize:14}},'Enter day total')
-              )
+          h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+            ...TXL.map(t=>h('button',{key:t.id,onClick:()=>{setSelTx(t);setForm(p=>({...p,qty:1}));setStep('nhsForm');},
+              style:{background:t.bg,border:'1px solid '+t.bc,borderRadius:10,padding:'12px 10px',cursor:'pointer',textAlign:'left',minHeight:64}},
+              h('div',{style:{fontWeight:700,color:t.tc,fontSize:14,marginBottom:4}},t.label),
+              h('div',{style:{fontSize:10,color:t.tc,opacity:.7,lineHeight:1.4}},t.sub)
+            ))
+          )
         )
 
       // ── Private tab — form always visible, presets as scrollable chips
@@ -711,6 +839,7 @@ function LogScreen({logTab,setLogTab,nhsMode,setNhsMode,step,setStep,selTx,setSe
           h(Field,{label:'Lab fee — full amount (optional)',type:'number',placeholder:'0.00',value:form.lab,onChange:e=>setForm(p=>({...p,lab:e.target.value})),
             hint:+form.lab>0?'Your '+(settings.labPct||100)+'% share: '+fmt(+form.lab*(settings.labPct||100)/100):null}),
           h(Field,{label:'Misc cost (optional)',type:'number',placeholder:'0.00',value:form.misc,onChange:e=>setForm(p=>({...p,misc:e.target.value}))}),
+          h(Field,{label:'Note (optional)',placeholder:'e.g. complex case, whitening gel used...',value:form.note||'',onChange:e=>setForm(p=>({...p,note:e.target.value}))}),
           form.desc&&fee>0&&isNew&&h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:14,padding:'8px 12px',background:'#f8fafc',borderRadius:8,border:'1px solid #e2e8f0'}},
             h('input',{type:'checkbox',id:'sp',checked:!!form.savePreset,onChange:e=>setForm(p=>({...p,savePreset:e.target.checked})),style:{width:16,height:16}}),
             h('label',{htmlFor:'sp',style:{fontSize:13,color:'#475569',cursor:'pointer'}},'Save as preset')
@@ -719,7 +848,7 @@ function LogScreen({logTab,setLogTab,nhsMode,setNhsMode,step,setStep,selTx,setSe
             onClick:()=>{
               if(!form.desc&&!fee)return;
               if(form.savePreset&&form.desc&&fee>0)onSavePreset({id:Date.now(),desc:form.desc,fee});
-              onLog({id:Date.now(),date:todayStr(),type:'private',label:form.desc||'Private treatment',udas:0,nhsFlat:0,nhsE:0,labF:+form.lab||0,miscF:+form.misc||0,privE:fee*(settings.assocPct/100)});
+              onLog({id:Date.now(),date:todayStr(),type:'private',label:form.desc||'Private treatment',udas:0,nhsFlat:0,nhsE:0,labF:+form.lab||0,miscF:+form.misc||0,privE:fee*(settings.assocPct/100),note:form.note||''});
             },
             style:{width:'100%',padding:12,background:form.desc&&fee>0?'#0f172a':'#94a3b8',color:'#fff',borderRadius:10,border:'none',fontWeight:700,fontSize:15}
           },'Log treatment')
@@ -728,22 +857,47 @@ function LogScreen({logTab,setLogTab,nhsMode,setNhsMode,step,setStep,selTx,setSe
 }
 
 
-function BarChart({bars,color,maxVal}){
+function BarChart({bars,color,maxVal,period}){
   if(!bars.length)return null;
-  const W=370,H=140,pad=28,bGap=4;
+  const W=370,H=140,pad=36,bGap=4;
   const bW=Math.max(4,(W-pad*2)/bars.length-bGap);
   const cx=x=>pad+(bW+bGap)*x+(bW/2);
-  return h('svg',{viewBox:'0 0 '+W+' '+(H+24),width:'100%',style:{overflow:'visible'}},
-    ...[0.25,0.5,0.75,1].map(f=>h('line',{key:f,x1:pad,x2:W-pad,y1:H-12-(f*(H-24)),y2:H-12-(f*(H-24)),stroke:'#f1f5f9',strokeWidth:1})),
+
+  // For weekly (12 bars) and yearly (12 bars) rotate labels to avoid overlap
+  // For daily (14 bars) show every other label
+  const showLabel=(i)=>{
+    if(period==='daily')return i%2===0;
+    return true;
+  };
+  const rotate=period==='weekly'||period==='yearly';
+
+  // Y axis labels: show 4 evenly spaced values
+  const yLabels=[0.25,0.5,0.75,1].map(f=>({
+    f,
+    val:'£'+(maxVal>999?Math.round(maxVal*f/100)/10+'k':Math.round(maxVal*f)),
+    y:H-12-(f*(H-24))
+  }));
+
+  return h('svg',{viewBox:'0 0 '+W+' '+(H+(rotate?36:20)),width:'100%',style:{overflow:'visible'}},
+    // Grid lines
+    ...yLabels.map(({f,y})=>h('line',{key:f,x1:pad,x2:W-pad,y1:y,y2:y,stroke:'#f1f5f9',strokeWidth:1})),
+    // Y axis labels
+    ...yLabels.map(({val,y})=>h('text',{key:val,x:pad-4,y,textAnchor:'end',fontSize:8,fill:'#cbd5e1',dominantBaseline:'middle'},val)),
+    // Bars and labels
     ...bars.map((b,i)=>{
       const bh=Math.max(2,maxVal>0?(b.val/maxVal)*(H-24):0);
       const x=pad+(bW+bGap)*i;
+      const labelX=cx(i);
+      const labelY=H+14;
       return h('g',{key:b.key},
         h('rect',{x,y:H-12-bh,width:bW,height:bh,rx:3,fill:b.val>0?color:'#e2e8f0'}),
-        h('text',{x:cx(i),y:H+14,textAnchor:'middle',fontSize:9,fill:'#94a3b8'},b.shortKey||b.key)
+        showLabel(i)&&(rotate
+          ? h('text',{x:labelX,y:labelY,textAnchor:'end',fontSize:8,fill:'#94a3b8',
+              transform:'rotate(-40,'+labelX+','+labelY+')'},b.shortKey||b.key)
+          : h('text',{x:labelX,y:labelY,textAnchor:'middle',fontSize:8,fill:'#94a3b8'},b.shortKey||b.key)
+        )
       );
-    }),
-    maxVal>0&&h('text',{x:pad-4,y:H-12-(H-24),textAnchor:'end',fontSize:9,fill:'#94a3b8',dominantBaseline:'middle'},'£'+Math.round(maxVal))
+    })
   );
 }
 
@@ -777,6 +931,13 @@ function ChartsScreen({entries,settings}){
   const avg=active.length?total/active.length:0;
   const color=cType==='nhs'?'#0F6E56':'#185FA5';
   const pLabel={'daily':'last 14 days','weekly':'last 12 weeks','yearly':'last 12 months'}[period];
+
+  // Busiest period — find the bar with the highest value
+  const busiestBar=bars.reduce((a,b)=>b.val>a.val?b:a,{val:0,shortKey:'—',key:'—'});
+  const busiestLabel=busiestBar.val>0?busiestBar.shortKey:'—';
+
+  // Working days logged — count unique dates in entries that have NHS or private earnings
+  const workDays=new Set(entries.filter(e=>(e.nhsE||0)+(e.privE||0)>0).map(e=>e.date)).size;
   return h('div',{style:{padding:'0 16px 16px'}},
     nhsOn&&h('div',{style:{display:'flex',background:'#f1f5f9',borderRadius:8,padding:3,marginBottom:12,gap:3}},
       ['nhs','private'].map(t=>h('button',{key:t,onClick:()=>setCType(t),
@@ -793,14 +954,14 @@ function ChartsScreen({entries,settings}){
         h('span',{style:{fontSize:12,color:'#64748b',fontWeight:500}},(cType==='nhs'?'NHS':'Private')+' · '+pLabel),
         h('span',{style:{fontSize:14,fontWeight:700,color:color}},fmt(total))
       ),
-      h(BarChart,{bars,color,maxVal})
+      h(BarChart,{bars,color,maxVal,period})
     ),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
       ...[
         {label:'Total',val:fmt(total),icon:'💰'},
         {label:'Avg per '+(period==='daily'?'day':period==='weekly'?'week':'month'),val:fmt(avg),icon:'📈'},
-        {label:'Best '+(period==='daily'?'day':period==='weekly'?'week':'month'),val:fmt(Math.max(...bars.map(b=>b.val),0)),icon:'🏆'},
-        {label:'Active '+(period==='daily'?'days':period==='weekly'?'weeks':'months'),val:String(active.length),icon:'📅'},
+        {label:'Busiest '+(period==='daily'?'day':period==='weekly'?'week':'month'),val:busiestLabel,icon:'🔥'},
+        {label:'Working days logged',val:String(workDays),icon:'📅'},
       ].map(c=>h('div',{key:c.label,style:{background:'#fff',border:'1px solid #f1f5f9',borderRadius:12,padding:'12px 12px 10px'}},
         h('div',{style:{fontSize:16,marginBottom:6}},c.icon),
         h('div',{style:{fontSize:17,fontWeight:700,marginBottom:2}},c.val),
@@ -810,44 +971,86 @@ function ChartsScreen({entries,settings}){
   );
 }
 
-function HistoryScreen({entries,onDelete,onExport,settings}){
+function DayCard({date,entries,onDelete,settings}){
+  const [open,setOpen]=useState(date===todayStr());
+  const lp=(settings?.labPct??100)/100;
+  const nhsOn=settings?.nhs!==false;
+
+  // Day totals
+  const dayNhsE=entries.reduce((s,e)=>s+(e.nhsE||0),0);
+  const dayPrivE=entries.reduce((s,e)=>s+(e.privE||0),0);
+  const dayUdas=entries.reduce((s,e)=>s+(e.udas||0),0);
+  const dayLab=entries.reduce((s,e)=>s+(e.labF||0),0)*lp;
+  const dayMisc=entries.reduce((s,e)=>s+(e.miscF||0),0);
+  const dayNet=dayNhsE+dayPrivE-dayLab-dayMisc;
+  const dateObj=new Date(date+'T12:00:00');
+  const dateLabel=dateObj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();
+
+  return h('div',{style:{marginBottom:10}},
+    // Collapsed summary card — always visible, tap to expand
+    h('button',{onClick:()=>setOpen(o=>!o),
+      style:{width:'100%',background:'#fff',border:'1px solid #f1f5f9',borderRadius:12,padding:'12px 14px',textAlign:'left',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      h('div',{style:{flex:1}},
+        h('div',{style:{fontSize:11,color:'#94a3b8',letterSpacing:'0.06em',marginBottom:4}},dateLabel),
+        h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
+          nhsOn&&dayUdas>0&&h('span',{style:{background:'#E1F5EE',color:'#085041',fontSize:11,padding:'2px 7px',borderRadius:4,fontWeight:600}},fU(dayUdas)+' UDA'),
+          nhsOn&&dayNhsE>0&&h('span',{style:{fontSize:12,color:'#085041',fontWeight:500}},'NHS '+fmt(dayNhsE)),
+          dayPrivE>0&&h('span',{style:{fontSize:12,color:'#0C447C',fontWeight:500}},'Private '+fmt(dayPrivE)),
+          (dayLab>0||dayMisc>0)&&h('span',{style:{fontSize:11,color:'#94a3b8'}},
+            '−'+fmt(dayLab+dayMisc)+' costs')
+        )
+      ),
+      h('div',{style:{display:'flex',alignItems:'center',gap:10,flexShrink:0,marginLeft:12}},
+        h('div',{style:{fontWeight:700,fontSize:16,color:'#0f172a'}},fmt(dayNet)),
+        h('span',{style:{fontSize:12,color:'#94a3b8',transition:'transform .2s',display:'inline-block',transform:open?'rotate(180deg)':'rotate(0deg)'}},
+          '▾')
+      )
+    ),
+    // Expanded entries
+    open&&h('div',{style:{background:'#f8fafc',borderRadius:'0 0 12px 12px',border:'1px solid #f1f5f9',borderTop:'none',padding:'8px 10px 10px'}},
+      ...entries.map(e=>{
+        const earned=(e.nhsE||0)+(e.privE||0);
+        const tags=[];
+        if(e.udas>0)tags.push({t:fU(e.udas)+' UDA',bg:'#E1F5EE',tc:'#085041'});
+        if(e.nhsFlat>0)tags.push({t:'£'+e.nhsFlat+' flat',bg:'#E1F5EE',tc:'#085041'});
+        if(e.type==='private')tags.push({t:'Private',bg:'#E6F1FB',tc:'#0C447C'});
+        if(e.labF>0)tags.push({t:'Lab '+fmt(e.labF*lp)+(lp<1?' ('+Math.round(lp*100)+'%)':''),bg:'#FAEEDA',tc:'#633806'});
+        if(e.miscF>0)tags.push({t:'Misc £'+e.miscF,bg:'#FCEBEB',tc:'#501313'});
+        return h('div',{key:e.id,style:{background:'#fff',borderRadius:8,padding:'9px 10px',marginBottom:5,display:'flex',justifyContent:'space-between',alignItems:'flex-start',border:'1px solid #f1f5f9'}},
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontWeight:600,fontSize:13,marginBottom:4}},e.label),
+            h('div',{style:{display:'flex',gap:4,flexWrap:'wrap'}},
+              ...tags.map(tg=>h('span',{key:tg.t,style:{background:tg.bg,color:tg.tc,fontSize:10,padding:'2px 6px',borderRadius:4}},tg.t))
+            ),
+            (e.session||e.practice||e.note)&&h('div',{style:{fontSize:10,color:'#94a3b8',marginTop:4,fontStyle:'italic'}},
+              [e.session==='am'?'🌅 Morning':e.session==='pm'?'🌇 Afternoon':e.session==='full'?'☀️ Full day':'',e.practice,e.note].filter(Boolean).join(' · ')
+            )
+          ),
+          h('div',{style:{textAlign:'right',marginLeft:10,flexShrink:0}},
+            h('div',{style:{fontWeight:600,fontSize:13}},fmt(earned)),
+            h('button',{onClick:()=>onDelete(e.id),style:{background:'none',border:'none',cursor:'pointer',color:'#e2e8f0',fontSize:10,padding:'2px 0',display:'block',marginTop:2}},'remove')
+          )
+        );
+      })
+    )
+  );
+}
+
+function HistoryScreen({entries,onDelete,onExport,onExportPDF,settings}){
   if(!entries.length)return h('div',{style:{textAlign:'center',paddingTop:60,color:'#94a3b8',padding:'60px 16px 0'}},
     h('div',{style:{fontSize:40,marginBottom:10}},'📋'),
     h('div',{style:{fontSize:14}},'No treatments logged yet')
   );
   const grouped=entries.reduce((a,e)=>{const d=e.date||todayStr();(a[d]=a[d]||[]).push(e);return a;},{});
   return h('div',{style:{padding:'0 16px'}},
-    h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:12}},
+    h('div',{style:{display:'flex',justifyContent:'flex-end',gap:8,marginBottom:12}},
+      h('button',{onClick:onExportPDF,style:{padding:'7px 14px',borderRadius:8,border:'none',background:'#0f172a',color:'#fff',fontSize:12,fontWeight:600}},
+        '📄 Export summary'),
       h('button',{onClick:onExport,style:{padding:'7px 14px',borderRadius:8,border:'1px solid #e2e8f0',background:'#fff',fontSize:12,color:'#475569'}},
-        'Export CSV')
+        '⬇️ Export CSV')
     ),
     ...Object.entries(grouped).sort(([a],[b])=>b.localeCompare(a)).map(([date,de])=>
-      h('div',{key:date,style:{marginBottom:16}},
-        h('div',{style:{fontSize:11,color:'#94a3b8',letterSpacing:'0.06em',marginBottom:6}},
-          new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}).toUpperCase()),
-        ...de.map(e=>{
-          const lp=(settings?.labPct??100)/100;
-          const earned=(e.nhsE||0)+(e.privE||0);
-          const tags=[];
-          if(e.udas>0)tags.push({t:fU(e.udas)+' UDA',bg:'#E1F5EE',tc:'#085041'});
-          if(e.nhsFlat>0)tags.push({t:'£'+e.nhsFlat+' flat',bg:'#E1F5EE',tc:'#085041'});
-          if(e.type==='private')tags.push({t:'Private',bg:'#E6F1FB',tc:'#0C447C'});
-          if(e.labF>0)tags.push({t:'Lab '+fmt(e.labF*lp)+(lp<1?' ('+Math.round(lp*100)+'%)':''),bg:'#FAEEDA',tc:'#633806'});
-          if(e.miscF>0)tags.push({t:'Misc £'+e.miscF,bg:'#FCEBEB',tc:'#501313'});
-          return h('div',{key:e.id,style:{background:'#fff',border:'1px solid #f1f5f9',borderRadius:10,padding:'10px 12px',marginBottom:6,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
-            h('div',{style:{flex:1}},
-              h('div',{style:{fontWeight:600,fontSize:14,marginBottom:5}},e.label),
-              h('div',{style:{display:'flex',gap:4,flexWrap:'wrap'}},
-                ...tags.map(tg=>h('span',{key:tg.t,style:{background:tg.bg,color:tg.tc,fontSize:11,padding:'2px 6px',borderRadius:4}},tg.t))
-              )
-            ),
-            h('div',{style:{textAlign:'right',marginLeft:12,flexShrink:0}},
-              h('div',{style:{fontWeight:700,fontSize:15}},fmt(earned)),
-              h('button',{onClick:()=>onDelete(e.id),style:{background:'none',border:'none',cursor:'pointer',color:'#cbd5e1',fontSize:11,padding:'2px 0',display:'block',marginTop:2}},'remove')
-            )
-          );
-        })
-      )
+      h(DayCard,{key:date,date,entries:de,onDelete,settings})
     )
   );
 }
@@ -861,12 +1064,14 @@ function App(){
   const [editSettings,setEditSettings]=useState(false);
   const [toast,setToast]=useState(null);
   const [logTab,setLogTab]=useState('nhs');
-  const [nhsMode,setNhsMode]=useState('treatment');
   const [step,setStep]=useState('pick');
   const [selTx,setSelTx]=useState(null);
-  const [form,setForm]=useState({lab:'',misc:'',fee:'',desc:'',udaCount:'',qty:1,savePreset:false,saveId:null});
+  const [form,setForm]=useState({lab:'',misc:'',fee:'',desc:'',udaCount:'',qty:1,savePreset:false,saveId:null,note:''});
   const [bandValues,setBandValues]=useState(null);
   const [editBands,setEditBands]=useState(false);
+  const [practices,setPractices]=useState([]);
+  const [todaySession,setTodaySession]=useState(null);
+  const [showStartDay,setShowStartDay]=useState(false);
 
   useEffect(()=>{
     try{
@@ -878,6 +1083,18 @@ function App(){
       if(e)setEntries(JSON.parse(e));
       if(p)setPresets(JSON.parse(p));
       if(b)setBandValues(JSON.parse(b));
+      const pr=store.get(SK_PRAC);if(pr)setPractices(JSON.parse(pr));
+      const sess=store.get(SK_SESSION);
+      const today=new Date().toISOString().split('T')[0];
+      if(sess){
+        try{
+          const parsed=JSON.parse(sess);
+          if(parsed.date===today){setTodaySession(parsed);}
+          else{setShowStartDay(true);}
+        }catch{setShowStartDay(true);}
+      } else {
+        setShowStartDay(true);
+      }
     }catch{}
     setReady(true);
   },[]);
@@ -888,10 +1105,11 @@ function App(){
   const clearData=()=>{setEntries([]);try{store.remove(SK_E);}catch{}setEditSettings(false);toast$('Data cleared');};
 
   const logEntry=entry=>{
-    const ne=[entry,...entries];setEntries(ne);
+    const enriched={...entry,session:todaySession?.session||entry.session||'',practice:todaySession?.practice||entry.practice||''};
+    const ne=[enriched,...entries];setEntries(ne);
     try{store.set(SK_E,JSON.stringify(ne));}catch{}
     toast$('Logged');
-    setStep('pick');setSelTx(null);setForm({lab:'',misc:'',fee:'',desc:'',udaCount:'',qty:1,savePreset:false,saveId:null});
+    setStep('pick');setSelTx(null);setForm({lab:'',misc:'',fee:'',desc:'',udaCount:'',qty:1,savePreset:false,saveId:null,note:''});
     setTab('dashboard');
   };
 
@@ -902,18 +1120,116 @@ function App(){
   const saveBands=bv=>{setBandValues(bv);try{store.set(SK_B,JSON.stringify(bv));}catch{}setEditBands(false);toast$('Band values saved');};
   const resetBands=()=>{setBandValues(null);try{store.remove(SK_B);}catch{}setEditBands(false);toast$('Reset to NHS defaults');};
 
+  const addPractice=name=>{
+    if(!name.trim())return;
+    const np=[...practices,name.trim()];
+    setPractices(np);
+    try{store.set(SK_PRAC,JSON.stringify(np));}catch{}
+  };
+  const deletePractice=idx=>{
+    const np=practices.filter((_,i)=>i!==idx);
+    setPractices(np);
+    try{store.set(SK_PRAC,JSON.stringify(np));}catch{}
+  };
+  const startSession=sess=>{
+    setTodaySession(sess);
+    setShowStartDay(false);
+    try{store.set(SK_SESSION,JSON.stringify(sess));}catch{}
+  };
+
   const exportCSV=()=>{
-    const rows=[['Date','Type','Treatment','UDAs','NHS Earnings','Private Earnings','Lab Fee (full)','Your Lab Share','Misc Cost','Net']];
+    const rows=[['Date','Type','Treatment','UDAs','NHS Earnings','Private Earnings','Lab Fee (full)','Your Lab Share','Misc Cost','Net','Note']];
     const lp=(settings.labPct??100)/100;
     [...entries].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(e=>{
       const fullLab=e.labF||0;
       const yourLab=fullLab*lp;
       const net=(e.nhsE||0)+(e.privE||0)-yourLab-(e.miscF||0);
-      rows.push([e.date||'',e.type||'',e.label||'',fU(e.udas||0),(e.nhsE||0).toFixed(2),(e.privE||0).toFixed(2),fullLab.toFixed(2),yourLab.toFixed(2),(e.miscF||0).toFixed(2),net.toFixed(2)]);
+      rows.push([e.date||'',e.type||'',e.label||'',fU(e.udas||0),(e.nhsE||0).toFixed(2),(e.privE||0).toFixed(2),fullLab.toFixed(2),yourLab.toFixed(2),(e.miscF||0).toFixed(2),net.toFixed(2),e.note||'']);
     });
     const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='DentEarn_'+todayStr()+'.csv';a.click();
     toast$('CSV downloaded');
+  };
+
+  const exportPDF=()=>{
+    const lp=(settings.labPct??100)/100;
+    const target=settings?.udaTarget||1;
+    let udas=0,nhsE=0,privE=0,labF=0,miscF=0;
+    entries.forEach(e=>{udas+=e.udas||0;nhsE+=e.nhsE||0;privE+=e.privE||0;labF+=e.labF||0;miscF+=e.miscF||0;});
+    const effLab=labF*lp;
+    const net=nhsE+privE-effLab-miscF;
+    const pct=Math.min((udas/target)*100,100).toFixed(0);
+    const sessions=new Set(entries.filter(e=>(e.nhsE||0)+(e.privE||0)>0).map(e=>e.date)).size;
+    const grouped=entries.reduce((a,e)=>{const d=e.date||todayStr();(a[d]=a[d]||[]).push(e);return a;},{});
+    const sortedDates=Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
+    const nhsOn=settings.nhs!==false;
+
+    const rows=sortedDates.map(date=>{
+      const de=grouped[date];
+      const dNhs=de.reduce((s,e)=>s+(e.nhsE||0),0);
+      const dPriv=de.reduce((s,e)=>s+(e.privE||0),0);
+      const dUdas=de.reduce((s,e)=>s+(e.udas||0),0);
+      const dLab=de.reduce((s,e)=>s+(e.labF||0),0)*lp;
+      const dMisc=de.reduce((s,e)=>s+(e.miscF||0),0);
+      const dNet=dNhs+dPriv-dLab-dMisc;
+      const dateLabel=new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+      const treatments=de.map(e=>`${e.label}${e.note?' — '+e.note:''}`).join(', ');
+      return `<tr>
+        <td>${dateLabel}</td>
+        ${nhsOn?`<td style="text-align:right">${fU(dUdas)}</td>`:''}
+        ${nhsOn?`<td style="text-align:right">${fmt(dNhs)}</td>`:''}
+        <td style="text-align:right">${fmt(dPriv)}</td>
+        <td style="text-align:right">${dLab+dMisc>0?'−'+fmt(dLab+dMisc):'—'}</td>
+        <td style="text-align:right;font-weight:600">${fmt(dNet)}</td>
+        <td style="font-size:10px;color:#666">${treatments}</td>
+      </tr>`;
+    }).join('');
+
+    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>DentEarn — Earnings Summary</title>
+    <style>
+      body{font-family:system-ui,sans-serif;margin:32px;color:#1e293b;font-size:13px}
+      h1{font-size:22px;font-weight:700;margin:0 0 4px}
+      .sub{color:#64748b;font-size:13px;margin-bottom:24px}
+      .summary{display:grid;grid-template-columns:repeat(${nhsOn?4:3},1fr);gap:12px;margin-bottom:28px}
+      .card{background:#f8fafc;border-radius:8px;padding:12px 14px}
+      .card-val{font-size:20px;font-weight:700;margin-bottom:2px}
+      .card-lbl{font-size:11px;color:#64748b}
+      table{width:100%;border-collapse:collapse;font-size:12px}
+      th{background:#f1f5f9;padding:8px 10px;text-align:left;font-weight:600;font-size:11px;letter-spacing:.04em;color:#64748b;border-bottom:1px solid #e2e8f0}
+      td{padding:7px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+      tr:last-child td{border-bottom:none}
+      .footer{margin-top:28px;font-size:10px;color:#94a3b8;text-align:center}
+    </style></head><body>
+    <h1>🦷 DentEarn — Earnings Summary</h1>
+    <div class="sub">${settings.name} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</div>
+    <div class="summary">
+      ${nhsOn?`<div class="card"><div class="card-val">${fU(udas)} / ${fU(target)}</div><div class="card-lbl">UDAs (${pct}%)</div></div>`:''}
+      ${nhsOn?`<div class="card"><div class="card-val">${fmt(nhsE)}</div><div class="card-lbl">NHS earnings</div></div>`:''}
+      <div class="card"><div class="card-val">${fmt(privE)}</div><div class="card-lbl">Private earnings</div></div>
+      <div class="card"><div class="card-val">${fmt(net)}</div><div class="card-lbl">Net income (${sessions} sessions)</div></div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Date</th>
+        ${nhsOn?'<th style="text-align:right">UDAs</th>':''}
+        ${nhsOn?'<th style="text-align:right">NHS</th>':''}
+        <th style="text-align:right">Private</th>
+        <th style="text-align:right">Costs</th>
+        <th style="text-align:right">Net</th>
+        <th>Treatments</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="footer">© 2026 Dr Benjamin Aaron · DentEarn · For accountant use only — not a formal tax document</div>
+    </body></html>`;
+
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='DentEarn_Summary_'+todayStr()+'.html';a.click();
+    URL.revokeObjectURL(url);
+    toast$('Summary exported — open in browser and print to PDF');
   };
 
   const txActive=buildTX(bandValues);
@@ -928,11 +1244,24 @@ function App(){
   const startYear=new Date(new Date().getFullYear(),3,1);
   const doy=Math.max(1,Math.floor((Date.now()-startYear)/86400000));
   const projected=udas>0?Math.round((udas/doy)*365):0;
-  const stats={udas,nhsE,privE,labF:effLabF,miscF,net,pct,target,projected,labPct:settings?.labPct??100};
+  // Sessions = count half-day sessions properly
+  // Full day = 2, Morning/Afternoon = 1, no session type = 1 per unique date
+  const sessionCount=entries.filter(e=>(e.nhsE||0)+(e.privE||0)>0).reduce((acc,e)=>{
+    const key=e.date+(e.session||'');
+    acc.keys=acc.keys||new Set();
+    if(!acc.keys.has(key)){
+      acc.keys.add(key);
+      acc.count+=(e.session==='full'?2:1);
+    }
+    return acc;
+  },{count:0,keys:new Set()}).count||0;
+  const sessions=sessionCount;
+  const stats={udas,nhsE,privE,labF:effLabF,miscF,net,pct,target,projected,labPct:settings?.labPct??100,sessions};
 
   if(!ready)return h('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',fontSize:14,color:'#94a3b8'}},'Loading...');
-  if(!settings||editSettings)return h(Setup,{onSave:saveSettings,initial:settings,onCancel:settings?()=>setEditSettings(false):null,onClearData:settings?clearData:null});
+  if(!settings||editSettings)return h(Setup,{onSave:saveSettings,initial:settings,onCancel:settings?()=>setEditSettings(false):null,onClearData:settings?clearData:null,practices,onAddPractice:addPractice,onDeletePractice:deletePractice});
   if(editBands)return h(EditBands,{bandValues,txList:txActive,onSave:saveBands,onReset:resetBands,onCancel:()=>setEditBands(false)});
+  if(showStartDay&&settings)return h(StartDay,{practices,onStart:startSession,onSkip:()=>setShowStartDay(false)});
 
   return h('div',{style:{fontFamily:'system-ui,-apple-system,sans-serif',background:'#f8fafc',minHeight:'100vh',maxWidth:420,margin:'0 auto',display:'flex',flexDirection:'column'}},
     h('div',{style:{background:'#fff',padding:'14px 16px',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:10}},
@@ -945,7 +1274,8 @@ function App(){
         h('span',{style:{fontWeight:700,fontSize:17,color:'#0f172a'}},'DentEarn')
       ),
         h('div',{style:{fontSize:12,color:toast?'#16a34a':'#94a3b8',transition:'color .2s',fontWeight:toast?600:400}},
-          toast||(settings.name+' · '+new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})))
+          toast||(settings.name+' · '+new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+(todaySession?(todaySession.session==='am'?' · 🌅 Morning':todaySession.session==='pm'?' · 🌇 Afternoon':' · ☀️ Full day')+(todaySession.practice?' · '+todaySession.practice:''):'')
+          ))
       ),
       h('div',{style:{display:'flex',gap:6,alignItems:'center'}},
         settings.nhs!==false&&h('button',{onClick:()=>setEditBands(true),
@@ -956,16 +1286,16 @@ function App(){
     ),
     h('div',{style:{flex:1,paddingTop:16,paddingBottom:88}},
       tab==='dashboard'&&h(Dashboard,{stats,settings}),
-      tab==='log'&&h(LogScreen,{logTab,setLogTab,nhsMode,setNhsMode,step,setStep,selTx,setSelTx,form,setForm,settings,presets,txList:txActive,onLog:logEntry,onSavePreset:savePreset,onDeletePreset:deletePreset}),
+      tab==='log'&&h(LogScreen,{logTab,setLogTab,step,setStep,selTx,setSelTx,form,setForm,settings,presets,txList:txActive,onLog:logEntry,onSavePreset:savePreset,onDeletePreset:deletePreset}),
       tab==='charts'&&h(ChartsScreen,{entries,settings}),
-      tab==='history'&&h(HistoryScreen,{entries,onDelete:deleteEntry,onExport:exportCSV,settings})
+      tab==='history'&&h(HistoryScreen,{entries,onDelete:deleteEntry,onExport:exportCSV,onExportPDF:exportPDF,settings})
     ),
     h('div',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:420,background:'#fff',borderTop:'1px solid #f1f5f9',display:'flex',flexDirection:'column'}},
       h('div',{style:{textAlign:'center',fontSize:9,color:'#cbd5e1',paddingTop:4,letterSpacing:'0.02em'}},'© 2026 Dr Benjamin Aaron. All rights reserved.'),
       h('div',{style:{display:'flex'}},
       ...['dashboard','log','charts','history'].map((t,i)=>{
         const icons=['📊','➕','📈','📋'];const labels=['Overview','Log','Charts','History'];
-        return h('button',{key:t,onClick:()=>{setTab(t);if(t==='log'){setStep('pick');setSelTx(null);setNhsMode('treatment');if(settings.nhs===false)setLogTab('private');}},
+        return h('button',{key:t,onClick:()=>{setTab(t);if(t==='log'){setStep('pick');setSelTx(null);if(settings.nhs===false)setLogTab('private');}},
           style:{flex:1,padding:'10px 0 8px',background:'none',border:'none',cursor:'pointer',color:tab===t?'#0f172a':'#94a3b8',display:'flex',flexDirection:'column',alignItems:'center',gap:2,borderTop:tab===t?'2px solid #0f172a':'2px solid transparent'}},
           h('span',{style:{fontSize:18}},icons[i]),
           h('span',{style:{fontSize:10,letterSpacing:'0.04em',fontWeight:tab===t?700:400}},labels[i])
